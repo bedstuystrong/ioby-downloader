@@ -1,10 +1,11 @@
-require('dotenv').config();
+import 'dotenv/config';
 
-const fs = require('node:fs/promises');
-const { promisify } = require('node:util');
-const glob = promisify(require('glob'));
+import fs from 'node:fs/promises';
+import { promisify } from 'node:util';
+import g from 'glob';
+const glob = promisify(g);
 
-const { downloadDonorListDetail } = require('./ioby');
+import { downloadDonorListDetail } from './ioby';
 
 const downloadPath = './downloads';
 const baseFilename = 'download-donor-detail-recurring';
@@ -18,8 +19,6 @@ const baseFilename = 'download-donor-detail-recurring';
  * 3. rename new file to current
  * there must always be 2 files
  */
-
-
 
 (async () => {
   try {
