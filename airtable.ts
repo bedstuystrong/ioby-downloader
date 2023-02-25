@@ -1,0 +1,149 @@
+import 'dotenv/config';
+
+import _ from 'lodash';
+
+import Airtable from 'airtable';
+
+import {bases} from './airtable.json';
+import invariant from 'tiny-invariant';
+
+interface AirtableTableSchema {
+  [key: string]: string;
+}
+
+interface AirtableTableConfig {
+  key: string;
+  name: string;
+  schema: AirtableTableSchema;
+}
+
+interface AirtableBaseConfig {
+  id: string;
+  key: string;
+  tables: AirtableTableConfig[];
+}
+
+interface NormalizedAirtableRecord {
+  id: string;
+  _record: Airtable.Record<Airtable.FieldSet>;
+  _meta?: Record<string, any> | null;
+  [key: string]: any;
+}
+
+export class AirtableBase {
+  client: Airtable;
+  config: AirtableBaseConfig;
+  _base: Airtable.Base;
+
+  constructor(baseKey: string) {
+    this.client = new Airtable({
+      apiKey: process.env.AIRTABLE_API_KEY,
+    });
+
+    this.config = _.find(bases, ['key', baseKey]);
+    invariant(this.config, `could not find base with key "${baseKey}" in config`);
+
+    this._base = this.client.base(this.config.id);
+  }
+
+  table = (tableKey: string) => {
+    return new AirtableTable(this, tableKey);
+  }
+}
+
+interface RecordCreateOptionalParameters {
+  typecast?: boolean;
+};
+
+class AirtableTable {
+  client: Airtable;
+  config: AirtableTableConfig;
+  base: AirtableBase;
+  _table: Airtable.Table<Airtable.FieldSet>;
+
+  constructor(base: AirtableBase, tableKey: string) {
+    this.base = base;
+    this.client = this.base.client;
+
+    this.config = _.find(this.base.config.tables, ['key', tableKey]);
+    invariant(this.config, `could not find table with key "${tableKey}" in base "${this.base.config.key}" config`);
+
+    this._table = this.base._base(this.config.name);
+  }
+
+  create = async (
+    data: Record<string, any> | Record<string, any>[],
+    params?: RecordCreateOptionalParameters
+  ): Promise<NormalizedAirtableRecord | NormalizedAirtableRecord[]> => {
+    const payload = Array.isArray(data) ? data.map((fields) => ({
+      fields: this.denormalize(fields),
+    })) : this.denormalize(data);
+    const result = await this._table.create(payload, {
+      typecast: true,
+      ...params,
+    });
+    return Array.isArray(result) ? result.map(this.normalize) : this.normalize(result);
+  }
+
+  normalize = (record: Airtable.Record<Airtable.FieldSet>): NormalizedAirtableRecord => {
+    const fields = {...record.fields};
+    const invertedSchema = _.invert(this.config.schema);
+
+    const recordBase = { id: record.id, _record: record } as NormalizedAirtableRecord;
+    if (fields._meta) {
+      recordBase._meta = JSON.parse(fields._meta as string);
+      Reflect.deleteProperty(fields, '_meta');
+    }
+
+    const normalizedFields = _.mapKeys(fields, (_value, key) => (invertedSchema[key] || key));
+
+    return _.assign(
+      recordBase,
+      _.mapValues(this.config.schema, () => null), // Airtable.Record doesn't include empty fields
+      normalizedFields,
+    );
+  };
+
+  denormalize = (object: Record<string, any>) => {
+    // Remove null keys and map back to original schema
+    const denormalized = _.mapKeys(
+      _.pickBy(object, (value) => !_.isNull(value)),
+      (_value, key) => (this.config.schema[key] || key)
+    );
+
+    if (denormalized._meta) {
+      denormalized._meta = JSON.stringify(denormalized._meta);
+    }
+
+    return denormalized;
+  };
+}
+
+const FINANCE_TRANSACTION_DIRECTIONS = {
+  In: 'recHqZivpo6j4T6On',
+  Out: 'reckW3l4mK8BCEBsd',
+};
+
+interface FinanceTransaction {
+  date: string; // ?
+  direction: 'In' | 'Out';
+  platform: string;
+  amount: number;
+  name: string;
+  note?: string;
+}
+
+export const createFinanceTransaction = async ({ direction, platform, amount, name, note, date }: FinanceTransaction) => {
+  const transactions = new AirtableBase('finance').table('transactions');
+
+  const directionID = FINANCE_TRANSACTION_DIRECTIONS[direction];
+
+  return await transactions.create({
+    direction: [directionID],
+    platform: platform,
+    amount: amount,
+    name: name,
+    notes: note,
+    date: date,
+  });
+}
