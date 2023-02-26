@@ -5,6 +5,8 @@ import keychain from 'keychain';
 import puppeteer, { type ElementHandle } from 'puppeteer';
 import invariant from 'tiny-invariant';
 
+import { isNodeError } from './util';
+
 const IOBY_BASE_URL = 'https://ioby.org';
 const IOBY_USERNAME = process.env.IOBY_USERNAME;
 const IOBY_PAGE_PATH = process.env.IOBY_PAGE_PATH;
@@ -14,8 +16,6 @@ const puppeteerOptions = {
   devtools: true,
   args: ['--no-sandbox'],
 };
-
-function isNodeError(error: any): error is NodeJS.ErrnoException { return error instanceof Error; }
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -109,6 +109,8 @@ export const downloadDonorListDetail = async (options: DownloadDonorListDetailOp
       console.log(`Download failed ${baseFilename}.csv`);
       process.exit(1);
     }
+
+    await browser.close();
 
     return baseFilename;
   } catch (error) {

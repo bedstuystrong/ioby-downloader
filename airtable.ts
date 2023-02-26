@@ -1,11 +1,9 @@
-import 'dotenv/config';
-
-import _ from 'lodash';
-
+import fs from 'node:fs';
 import Airtable from 'airtable';
-
-import {bases} from './airtable.json';
+import _ from 'lodash';
 import invariant from 'tiny-invariant';
+
+import { isNodeError } from './util';
 
 interface AirtableTableSchema {
   [key: string]: string;
@@ -23,6 +21,10 @@ interface AirtableBaseConfig {
   tables: AirtableTableConfig[];
 }
 
+interface AirtableConfig {
+  bases: AirtableBaseConfig[];
+}
+
 interface NormalizedAirtableRecord {
   id: string;
   _record: Airtable.Record<Airtable.FieldSet>;
@@ -30,17 +32,32 @@ interface NormalizedAirtableRecord {
   [key: string]: any;
 }
 
-export class AirtableBase {
+interface RecordCreateOptionalParameters {
+  typecast?: boolean;
+}
+
+export default class AirtableBase {
   client: Airtable;
   config: AirtableBaseConfig;
   _base: Airtable.Base;
 
-  constructor(baseKey: string) {
+  constructor(baseKey: string, config?: AirtableConfig) {
+    if (!config) {
+      try {
+        const configFile = fs.readFileSync('./airtable.config.json', 'utf8');
+        config = JSON.parse(configFile);
+      } catch (error) {
+        const isENOENT = isNodeError(error) && error.code === 'ENOENT';
+        const errorMessage = isENOENT ? `Missing Airtable config: Can't find default config file airtable.config.json` : error;
+        throw new Error(errorMessage);
+      }
+    }
+
     this.client = new Airtable({
       apiKey: process.env.AIRTABLE_API_KEY,
     });
 
-    this.config = _.find(bases, ['key', baseKey]);
+    this.config = _.find(config.bases, ['key', baseKey]);
     invariant(this.config, `could not find base with key "${baseKey}" in config`);
 
     this._base = this.client.base(this.config.id);
@@ -50,10 +67,6 @@ export class AirtableBase {
     return new AirtableTable(this, tableKey);
   }
 }
-
-interface RecordCreateOptionalParameters {
-  typecast?: boolean;
-};
 
 class AirtableTable {
   client: Airtable;
@@ -86,7 +99,7 @@ class AirtableTable {
   }
 
   normalize = (record: Airtable.Record<Airtable.FieldSet>): NormalizedAirtableRecord => {
-    const fields = {...record.fields};
+    const fields = { ...record.fields };
     const invertedSchema = _.invert(this.config.schema);
 
     const recordBase = { id: record.id, _record: record } as NormalizedAirtableRecord;

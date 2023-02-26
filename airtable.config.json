@@ -16,6 +16,18 @@
             "direction": "Direction",
             "labels": "Labels"
           }
+        },
+        {
+          "key": "ioby",
+          "name": "ioby",
+          "schema": {
+            "date": "Date",
+            "order": "Order",
+            "name": "Name",
+            "email": "Email",
+            "amount": "Amount",
+            "frequency": "Frequency"
+          }
         }
       ]
     }
